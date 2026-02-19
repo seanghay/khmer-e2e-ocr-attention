@@ -1,3 +1,4 @@
+import json
 import os
 
 import torch
@@ -15,10 +16,13 @@ BATCH_SIZE = 32
 NUM_EPOCHS = 20
 LR = 1e-3
 IMG_HEIGHT = 32
-TEACHER_FORCING_RATIO = 0.5
+# Teacher forcing starts at 1.0 (full teacher forcing) and decays to 0.0.
+# This helps early convergence and gradually shifts the model to rely on its own predictions.
+TF_START = 1.0
+TF_END = 0.0
 
 
-def train_epoch(model, loader, optimizer, criterion, device):
+def train_epoch(model, loader, optimizer, criterion, device, teacher_forcing_ratio):
   model.train()
   total_loss = 0.0
   bar = tqdm(loader, desc="Train")
@@ -26,7 +30,7 @@ def train_epoch(model, loader, optimizer, criterion, device):
     imgs = imgs.to(device)
     labels = labels.to(device)
     optimizer.zero_grad()
-    outputs = model(imgs, labels, teacher_forcing_ratio=TEACHER_FORCING_RATIO)
+    outputs = model(imgs, labels, teacher_forcing_ratio=teacher_forcing_ratio)
     B, T, V = outputs.shape
     loss = criterion(outputs.reshape(B * T, V), labels[:, 1:].reshape(B * T))
     loss.backward()
@@ -61,15 +65,17 @@ def eval_epoch(model, loader, criterion, device):
 
 
 def main():
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  device = "mps"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
   root = os.path.dirname(os.path.abspath(__file__))
 
   train_ds = KhmerOCRDataset(
     os.path.join(root, "dataset/train.tsv"), root, img_height=IMG_HEIGHT
   )
   test_ds = KhmerOCRDataset(
-    os.path.join(root, "dataset/test.tsv"), root,
-    vocab=train_ds.vocab, img_height=IMG_HEIGHT
+    os.path.join(root, "dataset/test.tsv"),
+    root,
+    vocab=train_ds.vocab,
+    img_height=IMG_HEIGHT,
   )
 
   train_loader = DataLoader(
@@ -86,13 +92,32 @@ def main():
     emb_dim=EMB_DIM,
   ).to(device)
 
+  warmup_epochs = 5
   optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-  scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS)
+  warmup_sch = torch.optim.lr_scheduler.LinearLR(
+    optimizer,
+    start_factor=0.1,
+    total_iters=warmup_epochs,
+  )
+  cosine_sch = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optimizer, T_max=(NUM_EPOCHS - warmup_epochs)
+  )
+  scheduler = torch.optim.lr_scheduler.SequentialLR(
+    optimizer, schedulers=[warmup_sch, cosine_sch], milestones=[warmup_epochs]
+  )
+
   criterion = nn.CrossEntropyLoss(ignore_index=0)
+
+  # Save vocab separately so it doesn't bloat the model checkpoint
+  vocab_path = os.path.join(root, "vocab.json")
+  with open(vocab_path, "w", encoding="utf-8") as f:
+    json.dump(train_ds.vocab.char2idx, f, ensure_ascii=False, indent=2)
 
   best_loss = float("inf")
   for epoch in range(NUM_EPOCHS):
-    train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
+    # Linear decay: 1.0 at epoch 0, 0.0 at final epoch
+    teacher_forcing_ratio = TF_START - (TF_START - TF_END) * (epoch / (NUM_EPOCHS - 1))
+    train_loss = train_epoch(model, train_loader, optimizer, criterion, device, teacher_forcing_ratio)
     val_loss, val_acc = eval_epoch(model, test_loader, criterion, device)
     scheduler.step()
     current_lr = scheduler.get_last_lr()[0]
@@ -101,14 +126,12 @@ def main():
       f"Train Loss: {train_loss:.4f} | "
       f"Val Loss: {val_loss:.4f} | "
       f"Val Acc: {val_acc:.4f} | "
-      f"LR: {current_lr:.6f}"
+      f"LR: {current_lr:.6f} | "
+      f"TF: {teacher_forcing_ratio:.2f}"
     )
     if val_loss < best_loss:
       best_loss = val_loss
-      torch.save(
-        {"model_state": model.state_dict(), "vocab": train_ds.vocab},
-        os.path.join(root, "best_model.pt"),
-      )
+      torch.save(model.state_dict(), os.path.join(root, "best.pt"))
       print(f"  -> Saved best model (val_loss={val_loss:.4f})")
 
 

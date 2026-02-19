@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import torch
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
+from data import Vocabulary
 from model import KhmerOCR
 
 HIDDEN_DIM = 256
@@ -17,16 +19,25 @@ SOS = 1
 EOS = 2
 
 
-def load_model(checkpoint_path, device):
-    ckpt = torch.load(checkpoint_path, map_location=device)
-    vocab = ckpt["vocab"]
+def load_vocab(vocab_path):
+    with open(vocab_path, encoding="utf-8") as f:
+        char2idx = json.load(f)
+    vocab = Vocabulary()
+    vocab.char2idx = char2idx
+    vocab.idx2char = {v: k for k, v in char2idx.items()}
+    return vocab
+
+
+def load_model(checkpoint_path, vocab_path, device):
+    vocab = load_vocab(vocab_path)
     model = KhmerOCR(
         vocab_size=len(vocab),
         hidden_dim=HIDDEN_DIM,
         emb_dim=EMB_DIM,
         device=device,
     ).to(device)
-    model.load_state_dict(ckpt["model_state"])
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(state_dict)
     model.eval()
     return model, vocab
 
@@ -69,8 +80,13 @@ def main():
     parser.add_argument("images", nargs="+", help="Image file path(s) to recognize")
     parser.add_argument(
         "--checkpoint",
-        default="best_model.pt",
-        help="Path to model checkpoint (default: best_model.pt)",
+        default="best.pt",
+        help="Path to model checkpoint (default: best.pt)",
+    )
+    parser.add_argument(
+        "--vocab",
+        default="vocab.json",
+        help="Path to vocab.json (default: vocab.json)",
     )
     parser.add_argument(
         "--img-height",
@@ -93,7 +109,11 @@ def main():
         print(f"Error: checkpoint not found: {args.checkpoint}")
         raise SystemExit(1)
 
-    model, vocab = load_model(args.checkpoint, device)
+    if not os.path.isfile(args.vocab):
+        print(f"Error: vocab not found: {args.vocab}")
+        raise SystemExit(1)
+
+    model, vocab = load_model(args.checkpoint, args.vocab, device)
 
     for image_path in args.images:
         if not os.path.isfile(image_path):
