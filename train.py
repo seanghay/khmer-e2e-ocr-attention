@@ -65,7 +65,7 @@ def eval_epoch(model, loader, criterion, device):
 
 
 def main():
-  device = "mps"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   root = os.path.dirname(os.path.abspath(__file__))
 
   train_ds = KhmerOCRDataset(
