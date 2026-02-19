@@ -10,9 +10,8 @@ python generate.py
 # start the training
 python train.py
 
-
 # inference
-python train.py
+python infer.py
 ```
 
 
