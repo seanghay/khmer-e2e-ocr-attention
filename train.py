@@ -12,8 +12,8 @@ from model import KhmerOCR
 
 HIDDEN_DIM = 256
 EMB_DIM = 128
-BATCH_SIZE = 32
-NUM_EPOCHS = 20
+BATCH_SIZE = 64
+NUM_EPOCHS = 100
 LR = 1e-3
 IMG_HEIGHT = 32
 # Teacher forcing starts at 1.0 (full teacher forcing) and decays to 0.0.
