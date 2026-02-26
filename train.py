@@ -69,7 +69,7 @@ def main():
   root = os.path.dirname(os.path.abspath(__file__))
 
   train_ds = KhmerOCRDataset(
-    os.path.join(root, "dataset/train.tsv"), root, img_height=IMG_HEIGHT
+    os.path.join(root, "dataset/train.tsv"), root, img_height=IMG_HEIGHT, augment=True
   )
   test_ds = KhmerOCRDataset(
     os.path.join(root, "dataset/test.tsv"),
