@@ -25,7 +25,8 @@ def build_physical_aug():
   """Augmentation pipeline simulating scanned or photographed physical documents."""
   return A.Compose([
     A.OneOf([
-      A.GaussNoise(var_limit=(10, 60), p=1.0),
+      # std_range is a fraction of 255; (0.04, 0.20) ≈ 10–51 px std
+      A.GaussNoise(std_range=(0.04, 0.20), p=1.0),
       A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.1, 0.5), p=1.0),
     ], p=0.5),
     A.OneOf([
@@ -37,16 +38,17 @@ def build_physical_aug():
       A.OpticalDistortion(distort_limit=0.03, p=1.0),
       A.GridDistortion(num_steps=3, distort_limit=0.05, p=1.0),
     ], p=0.3),
-    A.ImageCompression(quality_lower=50, quality_upper=85, p=0.5),
+    A.ImageCompression(quality_range=(50, 85), p=0.5),
     A.Rotate(limit=2, border_mode=4, p=0.4),  # border_mode=4 → BORDER_REFLECT_101
     A.CoarseDropout(
-      max_holes=4, max_height=4, max_width=8,
-      min_holes=1, min_height=1, min_width=2,
-      fill_value=255, p=0.3,
+      num_holes_range=(1, 4),
+      hole_height_range=(1, 4),
+      hole_width_range=(2, 8),
+      fill=255, p=0.3,
     ),
     A.RandomShadow(
       shadow_roi=(0, 0, 1, 1),
-      num_shadows_lower=1, num_shadows_upper=2,
+      num_shadows_limit=(1, 2),
       shadow_dimension=4, p=0.2,
     ),
   ])
@@ -55,7 +57,8 @@ def build_physical_aug():
 def build_digital_aug():
   """Augmentation pipeline simulating screen-rendered or digital PDF documents."""
   return A.Compose([
-    A.GaussNoise(var_limit=(2, 20), p=0.3),
+    # std_range as fraction of 255; (0.01, 0.08) ≈ 2.5–20 px std
+    A.GaussNoise(std_range=(0.01, 0.08), p=0.3),
     A.OneOf([
       A.Sharpen(alpha=(0.1, 0.4), lightness=(0.9, 1.1), p=1.0),
       A.CLAHE(clip_limit=2.0, tile_grid_size=(4, 4), p=1.0),
@@ -64,12 +67,13 @@ def build_digital_aug():
     A.HueSaturationValue(
       hue_shift_limit=10, sat_shift_limit=15, val_shift_limit=15, p=0.4
     ),
-    A.ImageCompression(quality_lower=75, quality_upper=98, p=0.3),
+    A.ImageCompression(quality_range=(75, 98), p=0.3),
     A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.2, p=0.4),
     A.CoarseDropout(
-      max_holes=2, max_height=4, max_width=6,
-      min_holes=1, min_height=1, min_width=2,
-      fill_value=255, p=0.2,
+      num_holes_range=(1, 2),
+      hole_height_range=(1, 4),
+      hole_width_range=(2, 6),
+      fill=255, p=0.2,
     ),
   ])
 
